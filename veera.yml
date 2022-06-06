@@ -1,0 +1,261 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Parameters:
+    Project:
+      Description: Project
+      Type: String
+      Default: '315N'
+
+    BusinessUnit:
+      Description: BusinessUnit
+      Type: String
+      Default: 'Transparency CAA'
+
+    RC:
+      Description: RC
+      Type: String
+      Default: 'U27'
+
+    SOF:
+      Description: Source Of Funds
+      Type: String
+      Default: '502'
+      
+    CIS:
+      Description: Hardening compliance
+      Type: String
+      Default: 'True'
+      AllowedValues:
+        - 'True'
+        - 'False'
+
+    EnvironmentType:
+      Description: EnvironmentType
+      Type: String
+      AllowedValues:
+        - Dev
+        - TestPve
+        - Prod
+
+    Customer:
+      Description: Customer
+      Type: String
+      Default: 'BCBSA'
+
+    BudgetOwnerEmail:
+      Description: BudgetOwnerEmail
+      Type: String
+      Default: 'tcrmrf@bcbsa.com'
+
+    ApplicationName:
+      Description: ApplicationName
+      Type: String
+      Default: 'TCRMRF'
+
+    SensitivityLabel:
+      Description: SensitivityLabel
+      Type: String
+      Default: 'Internal'
+
+    ImageId:
+      Description: BCBSA golden image from Systems Manager
+      Type: AWS::SSM::Parameter::Value<String>
+      Default: AmazonLinux2GoldenAmi
+      
+    InstanceRole: 
+      Description: Role to assign to the ec2
+      Type: String
+      Default: "tcr-mrf-ec2worker-role"
+    
+Mappings:
+  Environment:
+    Dev:
+      Env: "dev"
+      InstanceType: "t2.micro"
+      KeyPair: "tcr-keypair-dev"
+      EbsKeyArn: "arn:aws:kms:us-east-1:772511989065:key/e99dc18c-9f99-4d4c-a476-1be59493a6ba"
+      VolumeType: "gp2"
+      VolumeSize: "50"
+      SecurityGroupId1: "sg-09d2696d30846554e" #vpc endpoint sg
+      SecurityGroupId2: "sg-05f784af503cece28" #coresg
+      PrivateSubnetId: "subnet-0734703856dd1cb69"
+      KmsBucketKey: "arn:aws:kms:us-east-1:772511989065:key/31239842-8a57-471a-813e-f52de26fc708"
+    TestPve:
+      Env: "testpve"
+      InstanceType: "t2.micro"
+      KeyPair: "tcr-keypair-testpve"
+      EbsKeyArn: "arn:aws:kms:us-east-1:530466911720:key/87564933-04bf-4073-b55e-ad2418da6f55"
+      VolumeType: "gp2"
+      VolumeSize: "50"
+      SecurityGroupId1: "sg-00e7dc57c26a3b637" #vpc endpoint sg
+      SecurityGroupId2: "sg-0ef84b8fab3bcb3b0" #coresg
+      PrivateSubnetId: "subnet-05c3d050a23621121"
+      KmsBucketKey: "arn:aws:kms:us-east-1:530466911720:key/a30950f5-07f3-46d2-a53b-6b33e4bb0ce0"
+    Prod:
+      Env: "prod"
+      InstanceType: "t2.micro"
+      KeyPair: "tcr-keypair-prod"
+      EbsKeyArn: "arn:aws:kms:us-east-1:855522362530:key/d8971b22-803b-497a-9558-f007548b974d"
+      VolumeType: "gp2"
+      VolumeSize: "50"
+      SecurityGroupId1: "sg-008969cd06e16caf7" #vpc endpoint sg
+      SecurityGroupId2: "sg-093d62b55d0d26cb0" #coresg
+      PrivateSubnetId: "subnet-0313429411559f814"
+      KmsBucketKey: "arn:aws:kms:us-east-1:855522362530:key/83902f48-b139-4040-8e44-f1f222d6b378"
+
+Conditions:
+  IsUsEast1: !Equals 
+    - "us-east-1"
+    - !Sub ${AWS::Region}
+  IsUsEast2: !Equals 
+    - "us-east-2"
+    - !Sub ${AWS::Region}    
+  IsDev: !Equals 
+    - !Ref EnvironmentType 
+    - "Dev"    
+  CreateDevUsEast1Resource: !And 
+    - !Condition IsDev
+    - !Condition IsUsEast1  
+  IsQaPv: !Equals 
+    - !Ref EnvironmentType
+    - "QaPv"   
+  CreateQaPvUsEast1Resource: !And 
+    - !Condition IsQaPv
+    - !Condition IsUsEast1 
+  IsQaPe: !Equals 
+    - !Ref EnvironmentType
+    - "QaPe"  
+  CreateQaPeUsEast1Resource: !And 
+    - !Condition IsQaPe
+    - !Condition IsUsEast1
+  IsTestSit: !Equals 
+    - !Ref EnvironmentType
+    - "TestSit"     
+  CreateTestSitUsEast1Resource: !And 
+    - !Condition IsTestSit
+    - !Condition IsUsEast1 
+  IsTestPve: !Equals 
+    - !Ref EnvironmentType
+    - "TestPve"    
+  CreateTestPveUsEast1Resource: !And 
+    - !Condition IsTestPve
+    - !Condition IsUsEast1 
+  IsProd: !Equals 
+    - !Ref EnvironmentType
+    - "Prod"    
+  CreateProdUsEast1Resource: !And 
+    - !Condition IsProd
+    - !Condition IsUsEast1
+  
+Resources:
+  SupportRole:
+    Type: AWS::IAM::Role
+    Properties:  
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Description: 'Role used for EC2 support instance'
+      RoleName: !Join ["", [!FindInMap [Environment, !Ref EnvironmentType, Env], "-mrf-support-role"]]
+      ManagedPolicyArns: 
+        - "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+      
+  SupportPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties: 
+      Description: "Role to allow ec2 workers to execute"
+      ManagedPolicyName: !Join ["", [!FindInMap [Environment, !Ref EnvironmentType, Env], "-mrf-support-policy"]]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action:
+              - 's3:GetObject'
+              - 's3:PutObject'
+            Resource:
+              - !Join [ '', [ 'arn:aws:s3:::', !FindInMap [Environment, !Ref EnvironmentType, Env], '-inbound1-plan-tcr/*' ] ]
+              - !Join [ '', [ 'arn:aws:s3:::', !FindInMap [Environment, !Ref EnvironmentType, Env], '-inbound2-plan-tcr/*'  ] ]
+              - !Join [ '', [ 'arn:aws:s3:::', !FindInMap [Environment, !Ref EnvironmentType, Env], '-intermediate-processing-tcr/*'  ] ]
+              - !Join [ '', [ 'arn:aws:s3:::', !FindInMap [Environment, !Ref EnvironmentType, Env], 'outbound-crosswalk1-tcr/*'  ] ]
+              - !Join [ '', [ 'arn:aws:s3:::', !FindInMap [Environment, !Ref EnvironmentType, Env], 'outbound-crosswalk2-tcr/*'  ] ]
+              - !Join [ '', [ 'arn:aws:s3:::', !FindInMap [Environment, !Ref EnvironmentType, Env], 'outbound-error1-tcr/*'  ] ]
+              - !Join [ '', [ 'arn:aws:s3:::', !FindInMap [Environment, !Ref EnvironmentType, Env], 'outbound-error2-tcr/*'  ] ]
+              - !Join [ '', [ 'arn:aws:s3:::', !FindInMap [Environment, !Ref EnvironmentType, Env], 'outbound-export-tcr/*'  ] ]
+              - !Join [ '', [ 'arn:aws:s3:::', !FindInMap [Environment, !Ref EnvironmentType, Env], 'outbound-url1-tcr/*'  ] ]
+              - !Join [ '', [ 'arn:aws:s3:::', !FindInMap [Environment, !Ref EnvironmentType, Env], 'outbound-url2-tcr/*'  ] ]
+          - Effect: Allow
+            Action:
+              - 's3:ListBucket'
+            Resource:
+              - !Join [ '', [ 'arn:aws:s3:::', !FindInMap [Environment, !Ref EnvironmentType, Env], '-inbound1-plan-tcr' ] ]
+              - !Join [ '', [ 'arn:aws:s3:::', !FindInMap [Environment, !Ref EnvironmentType, Env], '-inbound2-plan-tcr'  ] ]
+              - !Join [ '', [ 'arn:aws:s3:::', !FindInMap [Environment, !Ref EnvironmentType, Env], '-intermediate-processing-tcr'  ] ]
+              - !Join [ '', [ 'arn:aws:s3:::', !FindInMap [Environment, !Ref EnvironmentType, Env], 'outbound-crosswalk1-tcr'  ] ]
+              - !Join [ '', [ 'arn:aws:s3:::', !FindInMap [Environment, !Ref EnvironmentType, Env], 'outbound-crosswalk2-tcr'  ] ]
+              - !Join [ '', [ 'arn:aws:s3:::', !FindInMap [Environment, !Ref EnvironmentType, Env], 'outbound-error1-tcr'  ] ]
+              - !Join [ '', [ 'arn:aws:s3:::', !FindInMap [Environment, !Ref EnvironmentType, Env], 'outbound-error2-tcr'  ] ]
+              - !Join [ '', [ 'arn:aws:s3:::', !FindInMap [Environment, !Ref EnvironmentType, Env], 'outbound-export-tcr'  ] ]
+              - !Join [ '', [ 'arn:aws:s3:::', !FindInMap [Environment, !Ref EnvironmentType, Env], 'outbound-url1-tcr'  ] ]
+              - !Join [ '', [ 'arn:aws:s3:::', !FindInMap [Environment, !Ref EnvironmentType, Env], 'outbound-url2-tcr'  ] ]
+          - Effect: Allow
+            Action:
+              - 'kms:Encrypt'
+              - 'kms:Decrypt'
+            Resource:
+              - !FindInMap [Environment, !Ref EnvironmentType, KmsBucketKey]
+      Roles: 
+        - !Ref SupportRole
+        
+  InstanceProfileWorker:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Roles:
+        - !Ref SupportRole
+
+  EC2SupportInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: !FindInMap [Environment, !Ref EnvironmentType, InstanceType]
+      IamInstanceProfile: !Ref InstanceProfileWorker
+      KeyName: !FindInMap [Environment, !Ref EnvironmentType, KeyPair]
+      ImageId: !Ref ImageId
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeType: !FindInMap [Environment, !Ref EnvironmentType, VolumeType]
+            VolumeSize: !FindInMap [Environment, !Ref EnvironmentType, VolumeSize]
+            DeleteOnTermination: 'true'
+            Encrypted: 'true'
+            KmsKeyId: !FindInMap [Environment, !Ref EnvironmentType, EbsKeyArn]
+      SubnetId: !FindInMap [Environment, !Ref EnvironmentType, PrivateSubnetId]
+      DisableApiTermination: True
+      SecurityGroupIds:
+        - !FindInMap [Environment, !Ref EnvironmentType, SecurityGroupId1]
+        - !FindInMap [Environment, !Ref EnvironmentType, SecurityGroupId2] 
+      Tags:
+        - Key: Name
+          Value: !Join ["", [!Ref EnvironmentType, "-Mrf-Support"]]
+        - Key: bcbsa:project
+          Value: !Ref Project
+        - Key: bcbsa:business-unit
+          Value: !Ref BusinessUnit
+        - Key: bcbsa:rc
+          Value: !Ref RC
+        - Key: bcbsa:sof
+          Value: !Ref SOF
+        - Key: bcbsa:environment-type
+          Value: !Ref EnvironmentType
+        - Key: bcbsa:customer
+          Value: !Ref Customer
+        - Key: bcbsa:budget-owner-email
+          Value: !Ref BudgetOwnerEmail
+        - Key: bcbsa:application-name
+          Value: !Ref ApplicationName
+        - Key: bcbsa:sensitivity-label
+          Value: !Ref SensitivityLabel
+        - Key: bcbsa:cis
+          Value: !Ref CIS

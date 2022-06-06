@@ -1,0 +1,319 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS CloudFormation Transfer Family Server setup
+
+Parameters:
+  EnvironmentType:
+    AllowedValues:
+      - Dev
+      - TestPve
+      - Prod
+    Description: Environment type
+    Type: String
+    Default: Dev 
+    
+  Project:
+    Description: Project
+    Type: String
+    Default: 315N
+    
+  ProjectCode:
+    Description: ProjectCode
+    Type: String
+    Default: 384N
+
+  BusinessUnit:
+    Description: BusinessUnit
+    Type: String
+    Default: Transparency CAA
+
+  RC:
+    Description: RC
+    Type: String
+    Default: U27
+
+  SOF:
+    Description: SOF
+    Type: String
+    Default: 502
+
+  Customer:
+    Description: Customer
+    Type: String
+    Default: BCBSA
+
+  BudgetOwnerEmail:
+    Description: BudgetOwnerEmail
+    Type: String
+    Default: tcrmrf@bcbsa.com
+
+  ApplicationName:
+    Description: ApplicationName
+    Type: String
+    Default: TCRMRF
+
+  SensitivityLabel:
+    Description: SensitivityLabel
+    Type: String
+
+Mappings:
+  Environment:
+    Dev:
+      LoggingRoleName: "bcbsa-tcrmrf-transfer-logging-dev"
+    TestPve:
+      LoggingRoleName: "bcbsa-tcrmrf-transfer-logging-testpve"
+    Prod:
+      LoggingRoleName: "bcbsa-tcrmrf-transfer-logging-prod"
+
+Conditions:
+  IsUsEast1: !Equals 
+    - "us-east-1"
+    - !Sub ${AWS::Region}
+  IsUsEast2: !Equals 
+    - "us-east-2"
+    - !Sub ${AWS::Region}    
+  IsDev: !Equals 
+    - !Ref EnvironmentType 
+    - "Dev"    
+  CreateDevUsEast1Resource: !And 
+    - !Condition IsDev
+    - !Condition IsUsEast1  
+  IsQaPv: !Equals 
+    - !Ref EnvironmentType
+    - "QaPv"   
+  CreateQaPvUsEast1Resource: !And 
+    - !Condition IsQaPv
+    - !Condition IsUsEast1 
+  IsQaPe: !Equals 
+    - !Ref EnvironmentType
+    - "QaPe"  
+  CreateQaPeUsEast1Resource: !And 
+    - !Condition IsQaPe
+    - !Condition IsUsEast1
+  IsTestSit: !Equals 
+    - !Ref EnvironmentType
+    - "TestSit"     
+  CreateTestSitUsEast1Resource: !And 
+    - !Condition IsTestSit
+    - !Condition IsUsEast1 
+  IsTestPve: !Equals 
+    - !Ref EnvironmentType
+    - "TestPve"    
+  CreateTestPveUsEast1Resource: !And 
+    - !Condition IsTestPve
+    - !Condition IsUsEast1 
+  IsProd: !Equals 
+    - !Ref EnvironmentType
+    - "Prod"    
+  CreateProdUsEast1Resource: !And 
+    - !Condition IsProd
+    - !Condition IsUsEast1
+
+Resources: 
+  
+  sftpVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.11.12.0/24
+      EnableDnsSupport: 'true'
+      EnableDnsHostnames: 'true'
+      InstanceTenancy: default
+      Tags:
+      - Key: Name
+        Value: TransferSFTPDemoVPC
+  sftpSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref 'sftpVPC'
+      CidrBlock: 10.11.12.0/25
+      AvailabilityZone:
+        Fn::Select:
+          - 0
+          - Fn::GetAZs: ""
+      MapPublicIpOnLaunch: 'True'
+      Tags:
+      - Key: Name
+        Value: TransferSFTPSubnet1
+  sftpSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref 'sftpVPC'
+      CidrBlock: 10.11.12.128/25
+      AvailabilityZone:
+        Fn::Select:
+          - 1
+          - Fn::GetAZs: ""
+      MapPublicIpOnLaunch: 'True'
+      Tags:
+      - Key: Name
+        Value: TransferSFTPSubnet2
+  sftpInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+      - Key: Name
+        Value: TransferSFTPDemoIGW
+  sftpAttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref 'sftpVPC'
+      InternetGatewayId: !Ref 'sftpInternetGateway'
+  sftpRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'sftpVPC'
+      Tags:
+      - Key: Name
+        Value: TransferSFTPDemoRouteTable
+  sftpSubnet1RouteAssociaton:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'sftpSubnet1'
+      RouteTableId: !Ref 'sftpRouteTable'
+  sftpSubnet2RouteAssociaton:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'sftpSubnet2'
+      RouteTableId: !Ref 'sftpRouteTable'
+  sftpRoutetoInternet:
+    Type: AWS::EC2::Route
+    DependsOn: sftpInternetGateway
+    Properties:
+      RouteTableId: !Ref 'sftpRouteTable'
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref 'sftpInternetGateway'
+  sftpEIP1:
+    Type: AWS::EC2::EIP
+    DependsOn: sftpVPC
+    Properties:
+      Domain: sftpVPC
+  sftpEIP2:
+    Type: AWS::EC2::EIP
+    DependsOn: sftpVPC
+    Properties:
+      Domain: sftpVPC
+
+
+  
+  Transfer:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        BlockPublicPolicy: True
+        IgnorePublicAcls: True
+        RestrictPublicBuckets: True
+      BucketName: !Join
+      - "-"
+      - - "transferworkshop1"
+        - !Select
+          - 2
+          - !Split
+            - "/"
+            - !Ref "AWS::StackId"
+  
+  TransferIamRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Action:
+              - sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service:
+                - transfer.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Description: 'Role used for transfer server to log user access'
+      ManagedPolicyArns: 
+        - 'arn:aws:iam::aws:policy/service-role/AWSTransferLoggingAccess'
+      RoleName: !FindInMap [Environment, !Ref EnvironmentType, LoggingRoleName]
+  
+  TransferRolePolicy:
+    Type: AWS::IAM::Policy
+    DependsOn: Transfer
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Action:
+            - s3:ListBucket
+            Resource:
+              - !GetAtt Transfer.Arn
+          - Effect: Allow
+            Resource:
+              - !Join [ "/", [ !GetAtt Transfer.Arn, "*" ] ]
+            Action:
+              - s3:PutObject
+              - s3:GetObject
+              - s3:DeleteObject
+              - s3:DeleteObjectVersion
+              - s3:GetObjectVersion
+        Version: '2012-10-17'
+      PolicyName: policy
+      Roles:
+        - !Ref 'TransferIamRole'
+      
+  TransferServer:
+    Type: AWS::Transfer::Server
+    Properties: 
+      Domain: S3
+      EndpointType: PUBLIC
+      IdentityProviderType: SERVICE_MANAGED
+      LoggingRole: !GetAtt TransferIamRole.Arn
+      Protocols: 
+        - SFTP
+      Tags:
+        - Key: bcbsa:project
+          Value: !Ref Project
+        - Key: bcbsa:projectcode
+          Value: !Ref ProjectCode
+        - Key: bcbsa:business-unit
+          Value: !Ref BusinessUnit
+        - Key: bcbsa:rc
+          Value: !Ref RC
+        - Key: bcbsa:sof
+          Value: !Ref SOF
+        - Key: bcbsa:environment-type
+          Value: !Ref EnvironmentType
+        - Key: bcbsa:customer
+          Value: !Ref Customer
+        - Key: bcbsa:budget-owner-email
+          Value: !Ref BudgetOwnerEmail
+        - Key: bcbsa:application-name
+          Value: !Ref ApplicationName
+        - Key: bcbsa:sensitivity-label
+          Value: !Ref SensitivityLabel
+        
+Outputs:
+  TransferServerArn:
+    Description: Arn of the tcr transfer server
+    Value: !Ref TransferServer
+  bucketName:
+    Description: S3 Bucket 1 Name
+    Value: !Ref Transfer
+  iamRoleForS3Access:
+    Description: S3 IAM Role for Transfer and File Gateway
+    Value: !GetAtt TransferIamRole.Arn
+  vpcID:
+    Description: ID of VPC
+    Value: !Ref sftpVPC
+  elasticIP1:
+    Description: Elastic IP 1
+    Value: !Ref sftpEIP1
+  elasticIP2:
+    Description: Elastic IP 2
+    Value: !Ref sftpEIP2
+  subnet1VPC:
+    Description: AZ of subnet 1
+    Value: !GetAtt sftpSubnet1.AvailabilityZone
+  subnet1ID:
+    Description: ID of Subnet 1
+    Value: !Ref sftpSubnet1
+  subnet2VPC:
+    Description: AZ of subnet 2
+    Value: !GetAtt sftpSubnet2.AvailabilityZone
+  subnet2ID:
+    Description: ID of Subnet 2
+    Value: !Ref sftpSubnet2
