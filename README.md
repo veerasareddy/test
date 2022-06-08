@@ -31,3 +31,34 @@ http://localhost:8080/contacts/nikhila.nervetla@gmail.com
 DELETE 
 ======
 http://localhost:8080/contacts/nikhila.nervetla@gmail.com
+
+
+
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "creates SFTP Server",
+    "Resources": {
+        "MyTransferServer": {
+            "Type": "AWS::Transfer::Server",
+            "Properties": {
+                "EndpointDetails": {
+                    "AddressAllocationIds": [
+                        "AddressAllocationId-1",
+                        "AddressAllocationId-2"
+                    ],
+                    "SubnetIds": [
+                        "SubnetId-1",
+                        "SubnetId-2"
+                    ],
+                    "VpcId": "VpcId"
+                },
+                "EndpointType": "VPC",
+                "LoggingRole": "Logging-Role-ARN",
+                "Protocols": [
+                    "SFTP"
+                ],
+                "SecurityPolicyName": "Security-Policy-Name",
+                "IdentityProviderDetails": {
+                    "InvocationRole": "Invocation-Role-ARN",
+                    "Url": "API_GATEWAY-Invocation-URL"
+                },
