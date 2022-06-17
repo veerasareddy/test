@@ -1,0 +1,16 @@
+1) Create the table (name --> Admin_Audit_TranSummary) to track the record count. That table will have below entities.
+    1.1) ID                --> Entity to keep the auto increment sequence value (Primary Key)
+    1.2) SchemaName        --> Name of the schema which has been audited (i.e. fis_dw, etc..)
+    1.3) TableName         --> Name of the table which has been audited (i.e. pid_tran, piq, etc..)
+    1.4) FileName          --> To Store the name of the file which has been processed
+    1.5) TotalRecords      --> Total Number of records processed from each process
+    1.6) CreatedDate       --> Creation date of the audit record 
+
+2) Create the stored procedure (name --> SpInsAuditTranSummary) to put the audit record into the Admin_Audit_TranSummary table.
+   This procedure will have below input parameters.
+   2.1) P_SchemaName       --> To get the name of the schema
+   2.2) P_TableName        --> To get the name of the table
+   2.3) P_FileName         --> To ge the name of the file being processed
+   2.4) P_TotalRecords     --> To get the total number of records being processed
+
+3) After Each process, we will call this SP with the required parameters to track the transaction summary

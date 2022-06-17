@@ -1,0 +1,20 @@
+1) Create the table (name --> Admin_Audit_ConfigDetails) to track the configuration changes. The table will have below entities.
+    1.1) ID                --> Entity to keep the auto increment sequence value (Primary Key)
+    1.2) SchemaName        --> Name of the schema which has been audited (i.e. fis_dw, etc..)
+    1.3) TableName         --> Name of the table which has been audited (i.e. pid_tran, piq, etc..)
+    1.4) PKID              --> To Store the Primary key ID (Sequence Value) from each table which has been audited
+    1.5) OperationType     --> This is identify whether this audit record created for INSERT/UPDATE operation
+    1.5) ConfigDetails     --> This is the entity to keep all the config changes with OLD and NEW values
+                           --> This will store changes as JSON data (Using SUPER Data Type)
+                           --> The JSON data schema will be like, {ColumnName1: {OldValue: <OldValue>, NewValue: <Newvalue>},ColumnName2: {OldValue: <OldValue>, NewValue: <Newvalue>}}
+    1.6) CreatedDate       --> Creation date of the audit record
+2) Create the stored procedure (name --> SpInsAuditConfigDetails) to put the audit record into the Admin_Audit_ConfigDetails table.
+
+   This procedure will have below input parameters.
+   2.1) P_SchemaName       --> To get the name of the schema
+   2.2) P_TableName        --> To get the name of the table
+   2.3) P_PKID             --> To ge the Primary Key ID
+   2.4) P_OperationType    --> To get the Operation Type
+   2.5) P_ConfigDetails    --> To get the Config Changes Details
+We will form the JSON from the query outside of Stored Procedure and then call the stored procedure with that.
+3) After Each statement, we will call this SP with the required parameters to track the configuration changes
